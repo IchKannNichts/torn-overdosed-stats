@@ -17,8 +17,8 @@
        1️⃣  Konstanten für die Torn‑API
        -------------------------------------------------------------- */
     const API_KEY      = "";
-    const USER_IDS     = [3090251,3133682,3084346,3111576,3109098,3092609,3091077];
-    const PLAYER_NAMES = ["K1rbs","ReflectionL0rd","InfernoFox ","Jendrox ","DoSammy ","Huchmampf ","Kochaff3"];
+    const USER_IDS     = [];
+    const PLAYER_NAMES = [];
 
     /* --------------------------------------------------------------
        2️⃣  Fest kodierte Telegram‑Konfiguration
