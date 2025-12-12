@@ -15,7 +15,7 @@ This repository contains the script file `OD‑Stats-DKF.user.js`, which can be 
 2. Open the direct installation link to the script:
 
    **Install Userscript:**  
-   [https://raw.githubusercontent.com/IchKannNichts/Torn-Overdosed-CSV-Downloader/main/OD‑Stats-DKF.user.js](https://raw.githubusercontent.com/IchKannNichts/Torn-Overdosed-CSV-Downloader/blob/main/OD%E2%80%91Stats-DKF.user.js)
+   [Install Skript](https://raw.githubusercontent.com/IchKannNichts/Torn-Overdosed-CSV-Downloader/blob/main/odStatsDKF.user.js)
    
 4. Tampermonkey will automatically open an installation dialog.  
    Click **Install** to add the script.
