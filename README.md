@@ -1,50 +1,50 @@
 # Overdosed Stats Userscript
 
-**Combi Chest** is a Tampermonkey userscript designed to enhance your workflow.  
-This repository contains the script file `OD‑Stats-DKF.user.js`, which can be installed directly into Tampermonkey.
+**Overdosed Stats** ist ein Tampermonkey Userscript, das entwickelt wurde, um deinen Workflow zu verbessern.
+Dieses Repository enthält die Skriptdatei `odStatsDKF.user.js`, die direkt in Tampermonkey installiert werden kann.
 
 ---
 
-## Installation
+## Installation 🛠️
 
-1. Install the **Tampermonkey** extension if you have not already:
-   - Chrome Web Store  
-   - Firefox Add-ons  
-   - Edge Add-ons
+1. Installiere die **Tampermonkey**-Erweiterung, falls du dies noch nicht getan hast:
+    - Chrome Web Store
+    - Firefox Add-ons
+    - Edge Add-ons
 
-2. Open the direct installation link to the script:
+2. Öffne den direkten Installationslink zum Skript:
 
-   **Install Userscript:**  
-   [OD-Stats from DKF Skript Install ](https://raw.githubusercontent.com/IchKannNichts/torn-overdosed-stats/main/odStatsDKF.user.js)
-   
-4. Tampermonkey will automatically open an installation dialog.  
-   Click **Install** to add the script.
+    **Install Userscript:**
+    [OD-Stats von DKF Skript Install](https://raw.githubusercontent.com/IchKannNichts/torn-overdosed-stats/main/odStatsDKF.user.js)
+    
+3. Tampermonkey wird automatisch einen Installationsdialog öffnen.
+    Klicke auf **Installieren**, um das Skript hinzuzufügen.
 
 ---
 
 ## Automatic Updates
 
-The script is configured so that Tampermonkey can automatically check for updates using the same URL.
+Das Skript ist so konfiguriert, dass Tampermonkey automatisch über dieselbe URL nach Updates suchen kann.
 
 ---
 
 ## File Overview
 
-- **combi-chest.user.js**  
-  The main userscript file. Includes Tampermonkey metadata and logic.
+- **odStatsDKF.user.js**
+    Die Haupt-Userscript-Datei. Enthält Tampermonkey-Metadaten und die Logik.
 
 ---
 
 ## Requirements
 
-- A modern browser  
-- Tampermonkey extension
+- Ein moderner Browser
+- Tampermonkey-Erweiterung
 
 ---
 
 ## Notes
 
-If the installation dialog does not appear, ensure that:
-- The file is served as **Raw** from GitHub.
-- The filename ends with `.user.js`.
-- Tampermonkey is enabled in your browser.
+Wenn der Installationsdialog nicht erscheint, stelle sicher, dass:
+- Die Datei als **Raw** von GitHub ausgeliefert wird.
+- Der Dateiname mit `.user.js` endet.
+- Tampermonkey in deinem Browser aktiviert ist.
