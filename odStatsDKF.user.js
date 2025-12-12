@@ -16,15 +16,15 @@
     /* --------------------------------------------------------------
        1️⃣  Konstanten für die Torn‑API
        -------------------------------------------------------------- */
-    const API_KEY      = "HKhnqVdHn0wZiPvX";
+    const API_KEY      = "";
     const USER_IDS     = [3090251,3133682,3084346,3111576,3109098,3092609,3091077];
     const PLAYER_NAMES = ["K1rbs","ReflectionL0rd","InfernoFox ","Jendrox ","DoSammy ","Huchmampf ","Kochaff3"];
 
     /* --------------------------------------------------------------
        2️⃣  Fest kodierte Telegram‑Konfiguration
        -------------------------------------------------------------- */
-    const TG_BOT_TOKEN = "8590338224:AAFpPXEDfHRNvfqChCMDMeBMSxElauoti1A";
-    const TG_CHAT_ID   = "7610975717";
+    const TG_BOT_TOKEN = "";
+    const TG_CHAT_ID   = "";
     const TG_ENDPOINT  = `https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`;
 
     /* --------------------------------------------------------------
