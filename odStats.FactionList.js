@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OD‑Statistik DKF Privat Script
 // @namespace    https://github.com/yourname/torn-overdosed
-// @version      3.0.0
-// @description  Fügt einen Button in die Torn-Menüleiste ein, holt die Overdosed-Statistik per Torn-API, sortiert sie und sendet sie per Telegram-Bot.
+// @version      4.0.0
+// @description  Button in der Torn-Menüleiste: holt die Mitglieder einer Fraktion, fragt deren Overdosed-Statistik ab, sortiert sie und sendet sie per Telegram-Bot.
 // @author       Kochaff3
 // @match        https://www.torn.com/*
 // @grant        GM_xmlhttpRequest
@@ -17,20 +17,28 @@
     'use strict';
 
     /* ------------------------------------------------------------------
-       1) Konfiguration
+       1) Konfiguration  –  HIER AUSFÜLLEN
        ------------------------------------------------------------------ */
-    const API_KEY = "";
-
-    // Pro Spieler eine Zeile. name ist optional (leer = Name aus der API / user_<id>)
-    const PLAYERS = [
-        // { id: 1234567, name: "Beispiel" },
-    ];
+    const API_KEY    = "";     // Torn-API-Key
+    const FACTION_ID = "";     // ID der Fraktion, z. B. "12345"
 
     const TG_BOT_TOKEN = "";
     const TG_CHAT_ID   = "";
 
-    const REQUEST_TIMEOUT_MS = 15000;
+    // Optional: Spieler-IDs, die NICHT in der Statistik erscheinen sollen
+    const EXCLUDE_IDS = [
+        // 1234567,
+    ];
+
+    // Mindestabstand zwischen zwei Torn-Anfragen (ms).
+    // 700 ms ≈ 85 Anfragen/Minute und bleibt damit unter dem Limit von ca. 100/Minute pro Key.
+    const REQUEST_GAP_MS = 700;
+
+    const REQUEST_TIMEOUT_MS   = 15000;
+    const RETRY_WAIT_MS        = 10000;   // Wartezeit nach "Too many requests"
+    const MAX_RETRIES          = 2;
     const RESET_STATE_AFTER_MS = 3000;
+    const TG_CHUNK_LIMIT       = 3800;    // Telegram erlaubt max. 4096 Zeichen pro Nachricht
 
     /* ------------------------------------------------------------------
        2) Styling – Button als Teil der Torn-Toolbar
@@ -56,7 +64,7 @@
         </svg>`;
 
     const TITLES = {
-        idle: "Overdosed‑Statistik per Telegram senden",
+        idle: "Fraktions-OD‑Statistik per Telegram senden",
         busy: "Sende …",
         ok:   "Statistik gesendet",
         err:  "Fehler – Details in der Browser-Konsole"
@@ -64,18 +72,18 @@
 
     let btnEl = null;
 
-    const setState = state => {
+    const setState = (state, titleOverride) => {
         if (!btnEl) return;
         btnEl.dataset.state = state;
-        btnEl.title = TITLES[state] || TITLES.idle;
+        btnEl.title = titleOverride || TITLES[state] || TITLES.idle;
     };
 
     const createButton = () => {
         const b = document.createElement("button");
         b.id = BTN_ID;
         b.type = "button";
-        b.className = "top_header_button button";   // Torn-eigene Header-Button-Klassen
-        b.setAttribute("aria-label", "Overdosed-Statistik senden");
+        b.className = "top_header_button button";
+        b.setAttribute("aria-label", "Fraktions-Overdosed-Statistik senden");
         b.innerHTML = PILL_SVG;
         b.dataset.state = "idle";
         b.title = TITLES.idle;
@@ -94,12 +102,10 @@
         li.id = LI_ID;
         li.appendChild(createButton());
 
-        // Vor "Activity log" einsortieren, sonst ans Ende der Toolbar
         const ref = toolbar.querySelector("#recent-history-wrapper");
         toolbar.insertBefore(li, ref && ref.parentNode === toolbar ? ref : null);
     };
 
-    // Torn ist teilweise eine SPA: Button bei Bedarf neu einfügen (gedrosselt per rAF)
     let scheduled = false;
     new MutationObserver(() => {
         if (scheduled) return;
@@ -113,8 +119,10 @@
     injectButton();
 
     /* ------------------------------------------------------------------
-       3) HTTP-Helfer (Promise + Timeout)
+       3) HTTP-Helfer + Rate-Limiter
        ------------------------------------------------------------------ */
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
     const gmRequest = opts => new Promise((resolve, reject) => {
         GM_xmlhttpRequest({
             timeout: REQUEST_TIMEOUT_MS,
@@ -125,32 +133,67 @@
         });
     });
 
+    // Reserviert für jede Torn-Anfrage einen Zeitslot, damit das Limit nicht überschritten wird.
+    let nextSlot = 0;
+    const waitForSlot = async () => {
+        const now = Date.now();
+        const start = Math.max(now, nextSlot);
+        nextSlot = start + REQUEST_GAP_MS;
+        if (start > now) await sleep(start - now);
+    };
+
     /* ------------------------------------------------------------------
        4) Torn-API
        ------------------------------------------------------------------ */
+    const tornGet = async (path, selections, attempt = 0) => {
+        await waitForSlot();
+
+        const url = `https://api.torn.com/${path}` +
+                    `?selections=${selections}&key=${encodeURIComponent(API_KEY)}`;
+        const r = await gmRequest({ method: "GET", url });
+        if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+
+        const d = JSON.parse(r.responseText);
+        if (d.error) {
+            // Code 5 = "Too many requests" → kurz warten und erneut versuchen
+            if (d.error.code === 5 && attempt < MAX_RETRIES) {
+                console.warn(`[ODs] Rate-Limit erreicht, warte ${RETRY_WAIT_MS / 1000}s …`);
+                await sleep(RETRY_WAIT_MS);
+                return tornGet(path, selections, attempt + 1);
+            }
+            throw new Error(`API ${d.error.code}: ${d.error.error}`);
+        }
+        return d;
+    };
+
+    /** Mitglieder der Fraktion laden → { name, members: [{id, name}] } */
+    const fetchFactionMembers = async () => {
+        const d = await tornGet(`faction/${encodeURIComponent(FACTION_ID)}`, "basic");
+
+        const raw = d.members || {};
+        const members = Array.isArray(raw)
+            ? raw.map(m => ({ id: String(m.id), name: m.name }))
+            : Object.entries(raw).map(([id, m]) => ({ id: String(id), name: m?.name }));
+
+        if (!members.length) throw new Error("Keine Mitglieder gefunden (Fraktions-ID prüfen).");
+        return { name: d.name || `Fraktion ${FACTION_ID}`, members };
+    };
+
+    /** Overdosed-Zahl eines Mitglieds laden */
     const fetchStats = async ({ id, name }) => {
-        const custom = (name || "").trim();
-        const fallback = custom || `user_${id}`;
+        const fallback = name || `user_${id}`;
         try {
-            const url = `https://api.torn.com/user/${encodeURIComponent(id)}` +
-                        `?selections=personalstats&key=${encodeURIComponent(API_KEY)}`;
-            const r = await gmRequest({ method: "GET", url });
-            if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
-
-            const d = JSON.parse(r.responseText);
-            if (d.error) throw new Error(`API ${d.error.code}: ${d.error.error}`);
-
+            const d = await tornGet(`user/${encodeURIComponent(id)}`, "personalstats");
             const od = d.personalstats?.overdosed;
             if (typeof od !== "number") throw new Error("kein overdosed-Wert");
-
-            return { ok: true, username: custom || d.name || fallback, overdosed: od };
+            return { ok: true, username: fallback, overdosed: od };
         } catch (e) {
             return { ok: false, username: fallback, reason: e.message };
         }
     };
 
     /* ------------------------------------------------------------------
-       5) Nachricht + Telegram (MarkdownV2-Escaping)
+       5) Nachricht + Telegram (MarkdownV2-Escaping, Aufteilung bei Überlänge)
        ------------------------------------------------------------------ */
     const MD_ESCAPE_RE = /[_*[\]()~`>#+\-=|{}.!\\]/g;
     const escapeMarkdownV2 = str => str.replace(MD_ESCAPE_RE, "\\$&");
@@ -163,18 +206,39 @@
             })
             .replace(", ", " ");
 
-    const buildMessage = (rows, failed) => {
+    const buildLines = (factionName, good, failed) => {
+        const total = good.reduce((sum, r) => sum + r.overdosed, 0);
         const lines = [
-            `🧪 OD‑Statistik vom ${formatNow()}`,
-            ...rows.map(r => `${r.username}: ${r.overdosed}`)
+            `🧪 OD‑Statistik ${factionName} vom ${formatNow()}`,
+            ...good.map(r => `${r.username}: ${r.overdosed}`),
+            "",
+            `Gesamt: ${total} (${good.length} Mitglieder)`
         ];
         if (failed.length) {
             lines.push("", `⚠️ Keine Daten: ${failed.map(f => f.username).join(", ")}`);
         }
-        return lines.join("\n");
+        return lines;
     };
 
-    const sendViaTelegram = async txt => {
+    const chunkLines = lines => {
+        const chunks = [];
+        let cur = [];
+        let len = 0;
+        for (const line of lines) {
+            const l = escapeMarkdownV2(line).length + 1;
+            if (cur.length && len + l > TG_CHUNK_LIMIT) {
+                chunks.push(cur);
+                cur = [];
+                len = 0;
+            }
+            cur.push(line);
+            len += l;
+        }
+        if (cur.length) chunks.push(cur);
+        return chunks;
+    };
+
+    const sendOne = async txt => {
         const r = await gmRequest({
             method: "POST",
             url: `https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`,
@@ -189,9 +253,16 @@
 
         let resp = null;
         try { resp = JSON.parse(r.responseText); } catch { /* ignorieren */ }
-
         if (r.status !== 200 || !resp?.ok) {
             throw new Error(`Telegram: ${resp?.description || "HTTP " + r.status}`);
+        }
+    };
+
+    const sendViaTelegram = async lines => {
+        const chunks = chunkLines(lines);
+        for (let i = 0; i < chunks.length; i++) {
+            const prefix = chunks.length > 1 ? `(${i + 1}/${chunks.length})\n` : "";
+            await sendOne(prefix + chunks[i].join("\n"));   // der Reihe nach, damit die Reihenfolge stimmt
         }
     };
 
@@ -203,26 +274,39 @@
     async function runTask() {
         if (busy) return;
         busy = true;
-        setState("busy");
+        setState("busy", "Lade Fraktion …");
 
         let finalState = "ok";
         try {
-            if (!API_KEY || !TG_BOT_TOKEN || !TG_CHAT_ID) throw new Error("API_KEY, TG_BOT_TOKEN oder TG_CHAT_ID fehlt.");
-            if (!PLAYERS.length) throw new Error("PLAYERS ist leer.");
+            if (!API_KEY || !FACTION_ID || !TG_BOT_TOKEN || !TG_CHAT_ID) {
+                throw new Error("API_KEY, FACTION_ID, TG_BOT_TOKEN oder TG_CHAT_ID fehlt.");
+            }
 
-            console.log("[ODs] Starte Torn‑Abfrage …");
+            console.log("[ODs] Lade Fraktionsmitglieder …");
+            const faction = await fetchFactionMembers();
+            const exclude = new Set(EXCLUDE_IDS.map(String));
+            const members = faction.members.filter(m => !exclude.has(m.id));
+            console.log(`[ODs] ${members.length} Mitglieder in „${faction.name}“.`);
 
-            // Alle Abfragen parallel statt nacheinander
-            const results = await Promise.all(PLAYERS.map(fetchStats));
+            let done = 0;
+            const results = await Promise.all(members.map(async m => {
+                const res = await fetchStats(m);
+                done++;
+                setState("busy", `Abfrage ${done}/${members.length} …`);
+                return res;
+            }));
+
             const good   = results.filter(r => r.ok).sort((a, b) => b.overdosed - a.overdosed);
             const failed = results.filter(r => !r.ok);
 
             failed.forEach(f => console.warn(`[ODs] ${f.username}: ${f.reason}`));
             if (!good.length) throw new Error("Keine Daten gefunden.");
 
-            await sendViaTelegram(buildMessage(good, failed));
-            console.log("[ODs] Nachricht gesendet.");
-            if (failed.length) finalState = "err";   // gesendet, aber nicht alle Spieler lieferten Daten
+            setState("busy", "Sende an Telegram …");
+            await sendViaTelegram(buildLines(faction.name, good, failed));
+            console.log("[ODs] Nachricht(en) gesendet.");
+
+            if (failed.length) finalState = "err";   // gesendet, aber nicht alle Mitglieder lieferten Daten
         } catch (e) {
             console.error("[ODs]", e.message || e);
             finalState = "err";
